@@ -1,61 +1,61 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import altair as alt
 
-# Config
+# Streamlit page config
 st.set_page_config(page_title="Dashboard Stock Opname", layout="wide")
 st.title("Dashboard Stock Opname")
 
-# File upload
+# File uploader
 uploaded_file = st.file_uploader("Upload JSON file", type=['json'])
+
 if uploaded_file:
+    # Load JSON into DataFrame
     data = pd.read_json(uploaded_file)
 
-    # Parse currency strings to int
+    # Currency parser
     def parse_money(x):
         if isinstance(x, str):
             s = x.replace('Rp', '').replace(',', '').strip()
             return int(s) if s and s != '0' else 0
         return 0
 
-    data['minus_store_nominal'] = data['Nominal Selisih Minus Store'].apply(parse_money)
-    data['plus_store_nominal'] = data['Nominal Selisih Plus Store'].apply(parse_money)
-    data['minus_gd_nominal'] = data['Nominal Selsih Minus GD'].apply(parse_money)
-    data['plus_gd_nominal'] = data['Nominal Selsih Plus GD'].apply(parse_money)
+    # Add numeric columns
+    cols = {
+        'minus_store_nominal': 'Nominal Selisih Minus Store',
+        'plus_store_nominal': 'Nominal Selisih Plus Store',
+        'minus_gd_nominal': 'Nominal Selsih Minus GD',
+        'plus_gd_nominal': 'Nominal Selsih Plus GD'
+    }
+    for new_col, raw_col in cols.items():
+        data[new_col] = data[raw_col].apply(parse_money)
 
-    # Total per toko/gudang
+    # Prepare totals for bar chart
     totals = pd.DataFrame({
         'Lokasi': ['Store', 'Gudang'],
         'Minus': [data['minus_store_nominal'].sum(), data['minus_gd_nominal'].sum()],
-        'Plus': [data['plus_store_nominal'].sum(), data['plus_gd_nominal'].sum()]
+        'Plus':  [data['plus_store_nominal'].sum(),  data['plus_gd_nominal'].sum()]
     })
-    # Melt for grouped bar
-    tot_melt = totals.melt(id_vars=['Lokasi'], value_vars=['Minus', 'Plus'], var_name='Tipe', value_name='Nominal')
+    bar_data = totals.melt(id_vars=['Lokasi'], var_name='Tipe', value_name='Nominal')
 
-    # Bar chart
-    bar = alt.Chart(tot_melt).mark_bar().encode(
-        x=alt.X('Lokasi:N', title='Lokasi'),
-        y=alt.Y('Nominal:Q', title='Nominal (Rp)'),
-        color='Tipe:N',
-        tooltip=['Lokasi', 'Tipe', alt.Tooltip('Nominal:Q', format=',')]
-    ).properties(width=350, height=300, title='Total Nominal Minus & Plus per Store dan Gudang')
+    # Bar chart with labels
+    def make_bar_chart(df):
+        base = alt.Chart(df).encode(
+            x=alt.X('Lokasi:N', title='Lokasi'),
+            y=alt.Y('Nominal:Q', title='Nominal (Rp)'),
+            color='Tipe:N',
+            tooltip=[alt.Tooltip('Tipe:N'), alt.Tooltip('Nominal:Q', format=',')]
+        )
+        bars = base.mark_bar().properties(width=300, height=300)
+        labels = bars.mark_text(dy=-5, fontSize=12, fontWeight='bold').encode(
+            text=alt.Text('Nominal:Q', format='Rp,')
+        )
+        return (bars + labels).configure_legend(titleFontSize=14, labelFontSize=12)
 
-    # Add text labels
-    text = bar.mark_text(
-        dy=-5,
-        fontSize=12,
-        fontWeight='bold'
-    ).encode(
-        text=alt.Text('Nominal:Q', format='Rp,')
-    )
+    chart_bar = make_bar_chart(bar_data).properties(title='Total Nominal Minus & Plus per Store dan Gudang')
 
-    chart1 = (bar + text).configure_legend(titleFontSize=14, labelFontSize=12)
-
-    # Pie charts for store and gudang based on TGL
-    df_store = data.dropna(subset=['TGL Store'])
-    df_gd = data.dropna(subset=['TGL GD'])
-    def count_status(df, col):
+    # Function to count status and percent
+    def prepare_pie_data(df, col):
         neg = (df[col] < 0).sum()
         zero = (df[col] == 0).sum()
         pos = (df[col] > 0).sum()
@@ -65,11 +65,17 @@ if uploaded_file:
         })
         dfc['Percent'] = (dfc['Count'] / dfc['Count'].sum() * 100).round(1)
         return dfc
-    store_counts = count_status(df_store, 'Selisih Store')
-    gd_counts = count_status(df_gd, 'Selisih GD')
 
-    def pie_chart(dfc, title):
-        base = alt.Chart(dfc).encode(
+    # Filter by opname date
+    df_store = data[data['TGL Store'].notnull()]
+    df_gd = data[data['TGL GD'].notnull()]
+
+    pie_store_data = prepare_pie_data(df_store, 'Selisih Store')
+    pie_gd_data = prepare_pie_data(df_gd, 'Selisih GD')
+
+    # Pie chart with percent labels
+    def make_pie_chart(df, title):
+        base = alt.Chart(df).encode(
             theta=alt.Theta('Count:Q', stack=True),
             color=alt.Color('Status:N', legend=alt.Legend(title='Status'))
         )
@@ -79,18 +85,18 @@ if uploaded_file:
         )
         return (pie + text).configure_title(fontSize=14).configure_legend(labelFontSize=12, titleFontSize=12)
 
-    pie1 = pie_chart(store_counts, 'Item Selisih Store')
-    pie2 = pie_chart(gd_counts, 'Item Selisih Gudang')
+    chart_pie_store = make_pie_chart(pie_store_data, 'Item Selisih Store')
+    chart_pie_gd = make_pie_chart(pie_gd_data, 'Item Selisih Gudang')
 
-    # Layout
-    col1, col2 = st.columns([1, 1])
+    # Layout: two columns
+    col1, col2 = st.columns(2)
     with col1:
-        st.altair_chart(chart1, use_container_width=True)
+        st.altair_chart(chart_bar, use_container_width=True)
     with col2:
-        st.altair_chart(alt.hconcat(pie1, pie2).resolve_scale(color='independent'), use_container_width=True)
+        st.altair_chart(alt.hconcat(chart_pie_store, chart_pie_gd).resolve_scale(color='independent'), use_container_width=True)
 
-    # Data table
+    # Display full data table
     st.subheader('Data Opname')
-    st.dataframe(data)
+    st.dataframe(data, use_container_width=True)
 else:
-    st.info('Please upload a JSON file to view the dashboard.')
+    st.info('Silakan upload file JSON untuk melihat dashboard.')
