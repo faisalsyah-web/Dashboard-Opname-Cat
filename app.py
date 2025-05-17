@@ -87,7 +87,7 @@ if uploaded_file:
     with col1:
         st.altair_chart(chart1, use_container_width=True)
     with col2:
-        st.altair_chart(alt.concat(pie1, pie2, columns=2), use_container_width=True)
+        st.altair_chart(alt.hconcat(pie1, pie2).resolve_scale(color='independent'), use_container_width=True)
 
     # Data table
     st.subheader('Data Opname')
