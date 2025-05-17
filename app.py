@@ -24,24 +24,25 @@ if uploaded_file:
     data['minus_gd_nominal']    = data['Nominal Selsih Minus GD'].apply(parse_money)
     data['plus_gd_nominal']     = data['Nominal Selsih Plus GD'].apply(parse_money)
 
-    # Grouped bar: separate Store/Gudang minus & plus
+        # Grouped bar: separate Store/Gudang minus & plus
     bar_df = pd.DataFrame({
         'Lokasi': ['Store','Store','Gudang','Gudang'],
         'Tipe': ['Minus','Plus','Minus','Plus'],
         'Nominal': [data['minus_store_nominal'].sum(), data['plus_store_nominal'].sum(),
                     data['minus_gd_nominal'].sum(),   data['plus_gd_nominal'].sum()]
     })
-    base = alt.Chart(bar_df).encode(
+    # Use xOffset for grouped bars
+    bars = alt.Chart(bar_df).mark_bar().encode(
         x=alt.X('Lokasi:N', title='Lokasi'),
         y=alt.Y('Nominal:Q', title='Nominal (Rp)'),
         color=alt.Color('Tipe:N', legend=alt.Legend(title='Tipe')),
-        column=alt.Column('Tipe:N', title=None)
-    )
-    bars = base.mark_bar().properties(height=300)
-    labels = base.mark_text(dy=-5, fontSize=12, fontWeight='bold').encode(
+        xOffset='Tipe:N',
+        tooltip=[alt.Tooltip('Tipe:N'), alt.Tooltip('Nominal:Q', format=',')]
+    ).properties(width=500, height=300)
+    labels = bars.mark_text(dy=-5, fontSize=12, fontWeight='bold').encode(
         text=alt.Text('Nominal:Q', format='Rp,')
     )
-    bar_chart = (bars + labels).configure_title(fontSize=16)
+    bar_chart = (bars + labels).configure_title(fontSize=16)    
 
     # Pie data
     def count_status(df, col):
